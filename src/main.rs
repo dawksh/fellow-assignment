@@ -8,6 +8,7 @@ use axum::{
 };
 
 use serde::{Deserialize, Serialize};
+use solana_program::example_mocks::solana_sdk::system_instruction;
 use solana_sdk::{
     program_pack::Pack,
     pubkey::Pubkey,
@@ -25,7 +26,8 @@ async fn main() {
         .route("/keypair", post(create_keypair))
         .route("/token/create", post(create_token))
         .route("/message/sign", post(sign_message))
-        .route("/message/verify", post(verify_message));
+        .route("/message/verify", post(verify_message))
+        .route("/send/sol", post(send_sol));
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
@@ -149,6 +151,29 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
     (StatusCode::OK, Json(response))
 }
 
+async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) {
+    let from = Pubkey::from_str(&payload.from).unwrap();
+    let to = Pubkey::from_str(&payload.to).unwrap();
+    let lamports = payload.lamports;
+
+    let ix = system_instruction::transfer(&from, &to, lamports);
+
+    let response = Response {
+        status: true,
+        data: serde_json::json!({
+            "instruction_data": base64::encode(ix.data),
+            "accounts": ix.accounts.iter().map(|meta| AccountMetaInfo {
+                pubkey: bs58::encode(meta.pubkey.to_bytes()).into_string(),
+                is_signer: meta.is_signer,
+                is_writable: meta.is_writable,
+                owner: bs58::encode(token_program_id().to_bytes()).into_string(),
+            }).collect::<Vec<_>>(),
+            "program_id": bs58::encode(ix.program_id.to_bytes()).into_string(),
+        }),
+    };
+    (StatusCode::OK, Json(response))
+}
+
 #[derive(Serialize, Debug)]
 struct Response {
     status: bool,
@@ -173,6 +198,13 @@ struct VerifyData {
     signature: String,
     message: String,
     pubkey: String,
+}
+
+#[derive(Deserialize)]
+struct SendSol {
+    from: String,
+    to: String,
+    lamports: u64,
 }
 
 #[derive(Serialize)]
