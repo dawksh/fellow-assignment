@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use solana_sdk::{signature::Keypair, signer::Signer};
 
 #[tokio::main]
 async fn main() {
@@ -11,7 +12,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
-        .route("/post", post(create_user));
+        .route("/keypair", post(create_keypair))
+        .route("/token/create", post(create_token));
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
@@ -22,22 +24,39 @@ async fn root() -> &'static str {
     "Hello, World!"
 }
 
-async fn create_user(Json(payload): Json<CreateUser>) -> (StatusCode, Json<User>) {
-    let user = User {
-        id: 1337,
-        username: payload.username,
+async fn create_keypair() -> (StatusCode, Json<Response>) {
+    let keypair = Keypair::new();
+    let response = Response {
+        status: true,
+        data: serde_json::json!({
+            "public_key": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
+            "private_key": bs58::encode(keypair.to_bytes()).into_string(),
+        }),
     };
+    (StatusCode::OK, Json(response))
+}
 
-    (StatusCode::CREATED, Json(user))
+async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Response>) {
+    let response = Response {
+        status: true,
+        data: serde_json::json!({
+            "mintAuthority": payload.mintAuthority,
+            "mint": payload.mint,
+            "decimals": payload.decimals,
+        }),
+    };
+    (StatusCode::OK, Json(response))
 }
 
 #[derive(Serialize)]
-struct User {
-    id: u64,
-    username: String,
+struct Response {
+    status: bool,
+    data: serde_json::Value,
 }
 
 #[derive(Deserialize)]
-struct CreateUser {
-    username: String,
+struct MintToken {
+    mintAuthority: String,
+    mint: String,
+    decimals: u8,
 }

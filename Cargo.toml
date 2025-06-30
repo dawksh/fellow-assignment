@@ -5,5 +5,9 @@ edition = "2021"
 
 [dependencies]
 axum = "0.8.4"
+bs58 = "0.5.1"
 serde = {version = "1.0.219", features = ["derive"]}
+serde_json = "1.0.140"
+solana-sdk = "2.3.1"
+spl-token = "8.0.0"
 tokio = {version = "1.45.1", features = ["rt-multi-thread"]}
