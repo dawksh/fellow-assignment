@@ -71,7 +71,20 @@ async fn create_keypair() -> (StatusCode, Json<Response>) {
 }
 
 async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Response>) {
-    let mint_pubkey = match Pubkey::from_str(&payload.mint) {
+    let (mint, mint_authority, decimals) =
+        match (&payload.mint, &payload.mintAuthority, payload.decimals) {
+            (Some(mint), Some(mint_authority), Some(decimals)) => (mint, mint_authority, decimals),
+            _ => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(Response::Error {
+                        success: false,
+                        error: "Missing required fields".to_string(),
+                    }),
+                )
+            }
+        };
+    let mint_pubkey = match Pubkey::from_str(mint) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -83,7 +96,7 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
             )
         }
     };
-    let mint_authority = match Pubkey::from_str(&payload.mintAuthority) {
+    let mint_authority = match Pubkey::from_str(mint_authority) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -100,7 +113,7 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
         &mint_pubkey,
         &mint_authority,
         None,
-        payload.decimals,
+        decimals,
     ) {
         Ok(ix) => ix,
         Err(_) => {
@@ -136,7 +149,19 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
 }
 
 async fn sign_message(Json(payload): Json<SignData>) -> (StatusCode, Json<Response>) {
-    let keypair = match bs58::decode(payload.secret)
+    let (message, secret) = match (&payload.message, &payload.secret) {
+        (Some(message), Some(secret)) => (message, secret),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Response::Error {
+                    success: false,
+                    error: "Missing required fields".to_string(),
+                }),
+            )
+        }
+    };
+    let keypair = match bs58::decode(secret)
         .into_vec()
         .ok()
         .and_then(|v| Keypair::from_bytes(&v).ok())
@@ -152,14 +177,13 @@ async fn sign_message(Json(payload): Json<SignData>) -> (StatusCode, Json<Respon
             )
         }
     };
-    let message = payload.message;
     let signature = keypair.sign_message(message.as_bytes());
     let response = Response::Success {
         success: true,
         data: serde_json::to_value(SignatureData {
             signature: base64::encode(signature),
             public_key: bs58::encode(keypair.pubkey().to_bytes()).into_string(),
-            message: message,
+            message: message.clone(),
         })
         .unwrap(),
     };
@@ -167,7 +191,20 @@ async fn sign_message(Json(payload): Json<SignData>) -> (StatusCode, Json<Respon
 }
 
 async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Response>) {
-    let signature_bytes = match base64::decode(&payload.signature) {
+    let (signature, message, pubkey) = match (&payload.signature, &payload.message, &payload.pubkey)
+    {
+        (Some(signature), Some(message), Some(pubkey)) => (signature, message, pubkey),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Response::Error {
+                    success: false,
+                    error: "Missing required fields".to_string(),
+                }),
+            )
+        }
+    };
+    let signature_bytes = match base64::decode(signature) {
         Ok(b) => b,
         Err(_) => {
             return (
@@ -191,7 +228,7 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
             )
         }
     };
-    let public_key = match Pubkey::from_str(&payload.pubkey) {
+    let public_key = match Pubkey::from_str(pubkey) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -203,12 +240,12 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
             )
         }
     };
-    let is_valid_signature = signature.verify(&public_key.to_bytes(), payload.message.as_bytes());
+    let is_valid_signature = signature.verify(&public_key.to_bytes(), message.as_bytes());
     let response = Response::Success {
         success: true,
         data: serde_json::to_value(VerificationData {
             valid: is_valid_signature,
-            message: payload.message,
+            message: message.clone(),
             pubkey: bs58::encode(public_key.to_bytes()).into_string(),
         })
         .unwrap(),
@@ -217,7 +254,19 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
 }
 
 async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) {
-    let from = match Pubkey::from_str(&payload.from) {
+    let (from, to, lamports) = match (&payload.from, &payload.to, payload.lamports) {
+        (Some(from), Some(to), Some(lamports)) => (from, to, lamports),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Response::Error {
+                    success: false,
+                    error: "Missing required fields".to_string(),
+                }),
+            )
+        }
+    };
+    let from = match Pubkey::from_str(from) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -229,7 +278,7 @@ async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) 
             )
         }
     };
-    let to = match Pubkey::from_str(&payload.to) {
+    let to = match Pubkey::from_str(to) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -241,7 +290,7 @@ async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) 
             )
         }
     };
-    let ix = system_instruction::transfer(&from, &to, payload.lamports);
+    let ix = system_instruction::transfer(&from, &to, lamports);
     let response = Response::Success {
         success: true,
         data: serde_json::to_value(SolTransferData {
@@ -259,7 +308,26 @@ async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) 
 }
 
 async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Response>) {
-    let destination = match Pubkey::from_str(&payload.destination) {
+    let (destination, mint, owner, amount) = match (
+        &payload.destination,
+        &payload.mint,
+        &payload.owner,
+        payload.amount,
+    ) {
+        (Some(destination), Some(mint), Some(owner), Some(amount)) => {
+            (destination, mint, owner, amount)
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Response::Error {
+                    success: false,
+                    error: "Missing required fields".to_string(),
+                }),
+            )
+        }
+    };
+    let destination = match Pubkey::from_str(destination) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -271,7 +339,7 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
             )
         }
     };
-    let mint = match Pubkey::from_str(&payload.mint) {
+    let mint = match Pubkey::from_str(mint) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -283,7 +351,7 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
             )
         }
     };
-    let owner = match Pubkey::from_str(&payload.owner) {
+    let owner = match Pubkey::from_str(owner) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -303,7 +371,7 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
         &dest_ata,
         &owner,
         &[],
-        payload.amount,
+        amount,
     ) {
         Ok(ix) => ix,
         Err(_) => {
@@ -336,7 +404,26 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
 }
 
 async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<Response>) {
-    let mint = match Pubkey::from_str(&payload.mint) {
+    let (mint, authority, destination, amount) = match (
+        &payload.mint,
+        &payload.authority,
+        &payload.destination,
+        payload.amount,
+    ) {
+        (Some(mint), Some(authority), Some(destination), Some(amount)) => {
+            (mint, authority, destination, amount)
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(Response::Error {
+                    success: false,
+                    error: "Missing required fields".to_string(),
+                }),
+            )
+        }
+    };
+    let mint = match Pubkey::from_str(mint) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -348,7 +435,7 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             )
         }
     };
-    let mint_authority = match Pubkey::from_str(&payload.authority) {
+    let mint_authority = match Pubkey::from_str(authority) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -360,7 +447,7 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             )
         }
     };
-    let destination = match Pubkey::from_str(&payload.destination) {
+    let destination = match Pubkey::from_str(destination) {
         Ok(pk) => pk,
         Err(_) => {
             return (
@@ -372,16 +459,14 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             )
         }
     };
-
     let dest_ata = get_associated_token_address(&destination, &mint);
-
     let ix = match spl_token::instruction::mint_to(
         &spl_token::id(),
         &mint,
         &dest_ata,
         &mint_authority,
         &[],
-        payload.amount,
+        amount,
     ) {
         Ok(ix) => ix,
         Err(_) => {
@@ -394,7 +479,6 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             )
         }
     };
-
     let accounts: Vec<AccountMetaInfo> = ix
         .accounts
         .iter()
@@ -404,7 +488,6 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             is_writable: meta.is_writable,
         })
         .collect();
-
     let response = Response::Success {
         success: true,
         data: serde_json::to_value(InstructionData {
@@ -432,45 +515,45 @@ enum Response {
 
 #[derive(Deserialize)]
 struct MintToken {
-    mintAuthority: String,
-    mint: String,
-    decimals: u8,
+    mintAuthority: Option<String>,
+    mint: Option<String>,
+    decimals: Option<u8>,
 }
 
 #[derive(Deserialize)]
 struct SignData {
-    message: String,
-    secret: String,
+    message: Option<String>,
+    secret: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct VerifyData {
-    signature: String,
-    message: String,
-    pubkey: String,
+    signature: Option<String>,
+    message: Option<String>,
+    pubkey: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct SendSol {
-    from: String,
-    to: String,
-    lamports: u64,
+    from: Option<String>,
+    to: Option<String>,
+    lamports: Option<u64>,
 }
 
 #[derive(Deserialize)]
 struct SendToken {
-    destination: String,
-    mint: String,
-    owner: String,
-    amount: u64,
+    destination: Option<String>,
+    mint: Option<String>,
+    owner: Option<String>,
+    amount: Option<u64>,
 }
 
 #[derive(Deserialize)]
 struct MintTokenRequest {
-    mint: String,
-    destination: String,
-    authority: String,
-    amount: u64,
+    mint: Option<String>,
+    destination: Option<String>,
+    authority: Option<String>,
+    amount: Option<u64>,
 }
 
 #[derive(Serialize)]
