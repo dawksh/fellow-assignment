@@ -378,8 +378,8 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
     let ix = match spl_token::instruction::mint_to(
         &spl_token::id(),
         &mint,
-        &mint_authority,
         &dest_ata,
+        &mint_authority,
         &[],
         payload.amount,
     ) {
