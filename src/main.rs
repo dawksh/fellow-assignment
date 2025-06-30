@@ -43,7 +43,7 @@ async fn root() -> &'static str {
 async fn create_keypair() -> (StatusCode, Json<Response>) {
     let keypair = Keypair::new();
     let response = Response {
-        status: true,
+        success: true,
         data: serde_json::json!({
             "pubkey": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
             "secret": bs58::encode(keypair.to_bytes()).into_string(),
@@ -59,7 +59,7 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid mint address" }),
                 }),
             )
@@ -71,7 +71,7 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid mint authority address" }),
                 }),
             )
@@ -89,7 +89,7 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Failed to build InitializeMint instruction" }),
                 }),
             )
@@ -107,7 +107,7 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
         .collect();
     let instruction_data = base64::encode(ix.data);
     let response = Response {
-        status: true,
+        success: true,
         data: serde_json::json!({
             "program_id": bs58::encode(ix.program_id.to_bytes()).into_string(),
             "accounts": accounts,
@@ -128,7 +128,7 @@ async fn sign_message(Json(payload): Json<SignData>) -> (StatusCode, Json<Respon
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid secret key" }),
                 }),
             )
@@ -137,7 +137,7 @@ async fn sign_message(Json(payload): Json<SignData>) -> (StatusCode, Json<Respon
     let message = payload.message;
     let signature = keypair.sign_message(message.as_bytes());
     let response = Response {
-        status: true,
+        success: true,
         data: serde_json::json!({
             "signature": base64::encode(signature),
             "public_key": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
@@ -154,7 +154,7 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid signature encoding" }),
                 }),
             )
@@ -166,7 +166,7 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid signature format" }),
                 }),
             )
@@ -178,7 +178,7 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid public key" }),
                 }),
             )
@@ -186,7 +186,7 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
     };
     let is_valid_signature = signature.verify(&public_key.to_bytes(), payload.message.as_bytes());
     let response = Response {
-        status: true,
+        success: true,
         data: serde_json::json!({
             "valid": is_valid_signature,
             "signature": base64::encode(signature),
@@ -204,7 +204,7 @@ async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) 
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid from address" }),
                 }),
             )
@@ -216,7 +216,7 @@ async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) 
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid to address" }),
                 }),
             )
@@ -224,7 +224,7 @@ async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) 
     };
     let ix = system_instruction::transfer(&from, &to, payload.lamports);
     let response = Response {
-        status: true,
+        success: true,
         data: serde_json::json!({
             "instruction_data": base64::encode(ix.data),
             "accounts": ix.accounts.iter().map(|meta| AccountMetaInfo {
@@ -246,7 +246,7 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid destination address" }),
                 }),
             )
@@ -258,7 +258,7 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid mint address" }),
                 }),
             )
@@ -270,7 +270,7 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid owner address" }),
                 }),
             )
@@ -291,14 +291,14 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Failed to build transfer instruction" }),
                 }),
             )
         }
     };
     let response = Response {
-        status: true,
+        success: true,
         data: serde_json::json!({
             "instruction_data": base64::encode(ix.data),
             "accounts": ix.accounts.iter().map(|meta| AccountMetaInfo {
@@ -320,7 +320,7 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid mint address" }),
                 }),
             )
@@ -332,7 +332,7 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid authority address" }),
                 }),
             )
@@ -344,7 +344,7 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Invalid destination address" }),
                 }),
             )
@@ -363,14 +363,14 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             return (
                 StatusCode::BAD_REQUEST,
                 Json(Response {
-                    status: false,
+                    success: false,
                     data: serde_json::json!({ "error": "Failed to build mint_to instruction" }),
                 }),
             )
         }
     };
     let response = Response {
-        status: true,
+        success: true,
         data: serde_json::json!({
             "instruction_data": base64::encode(ix.data),
             "accounts": ix.accounts.iter().map(|meta| AccountMetaInfo {
@@ -387,7 +387,7 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
 
 #[derive(Serialize, Debug)]
 struct Response {
-    status: bool,
+    success: bool,
     data: serde_json::Value,
 }
 
