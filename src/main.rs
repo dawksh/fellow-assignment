@@ -24,6 +24,7 @@ async fn main() {
         .route("/", get(root))
         .route("/keypair", post(create_keypair))
         .route("/token/create", post(create_token))
+        .route("/token/mint", post(mint_token))
         .route("/message/sign", post(sign_message))
         .route("/message/verify", post(verify_message))
         .route("/send/sol", post(send_sol))
@@ -210,6 +211,38 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
     (StatusCode::OK, Json(response))
 }
 
+async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<Response>) {
+    let mint = Pubkey::from_str(&payload.mint).unwrap();
+    let mint_authority = Pubkey::from_str(&payload.authority).unwrap();
+    let amount = payload.amount;
+    let destination = Pubkey::from_str(&payload.destination).unwrap();
+
+    let ix = spl_token::instruction::mint_to(
+        &spl_token::id(),
+        &mint,
+        &mint_authority,
+        &destination,
+        &[],
+        amount,
+    )
+    .unwrap();
+
+    let response = Response {
+        status: true,
+        data: serde_json::json!({
+            "instruction_data": base64::encode(ix.data),
+            "accounts": ix.accounts.iter().map(|meta| AccountMetaInfo {
+                pubkey: bs58::encode(meta.pubkey.to_bytes()).into_string(),
+                is_signer: meta.is_signer,
+                is_writable: meta.is_writable,
+                owner: bs58::encode(spl_token::id().to_bytes()).into_string(),
+            }).collect::<Vec<_>>(),
+            "program_id": bs58::encode(ix.program_id.to_bytes()).into_string(),
+        }),
+    };
+    (StatusCode::OK, Json(response))
+}
+
 #[derive(Serialize, Debug)]
 struct Response {
     status: bool,
@@ -248,6 +281,14 @@ struct SendToken {
     destination: String,
     mint: String,
     owner: String,
+    amount: u64,
+}
+
+#[derive(Deserialize)]
+struct MintTokenRequest {
+    mint: String,
+    destination: String,
+    authority: String,
     amount: u64,
 }
 
