@@ -49,7 +49,7 @@ async fn root() -> &'static str {
 
 async fn incorrect_method() -> (StatusCode, Json<Response>) {
     (
-        StatusCode::BAD_REQUEST,
+        StatusCode::METHOD_NOT_ALLOWED,
         Json(Response::Error {
             success: false,
             error: "Method not allowed".to_string(),
@@ -61,10 +61,11 @@ async fn create_keypair() -> (StatusCode, Json<Response>) {
     let keypair = Keypair::new();
     let response = Response::Success {
         success: true,
-        data: serde_json::json!({
-            "pubkey": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
-            "secret": bs58::encode(keypair.to_bytes()).into_string(),
-        }),
+        data: serde_json::to_value(KeypairData {
+            pubkey: bs58::encode(keypair.pubkey().to_bytes()).into_string(),
+            secret: bs58::encode(keypair.to_bytes()).into_string(),
+        })
+        .unwrap(),
     };
     (StatusCode::OK, Json(response))
 }
@@ -124,11 +125,12 @@ async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Respo
     let instruction_data = base64::encode(ix.data);
     let response = Response::Success {
         success: true,
-        data: serde_json::json!({
-            "program_id": bs58::encode(ix.program_id.to_bytes()).into_string(),
-            "accounts": accounts,
-            "instruction_data": instruction_data,
-        }),
+        data: serde_json::to_value(InstructionData {
+            program_id: bs58::encode(ix.program_id.to_bytes()).into_string(),
+            accounts: accounts,
+            instruction_data: instruction_data,
+        })
+        .unwrap(),
     };
     (StatusCode::OK, Json(response))
 }
@@ -154,11 +156,12 @@ async fn sign_message(Json(payload): Json<SignData>) -> (StatusCode, Json<Respon
     let signature = keypair.sign_message(message.as_bytes());
     let response = Response::Success {
         success: true,
-        data: serde_json::json!({
-            "signature": base64::encode(signature),
-            "public_key": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
-            "message": message,
-        }),
+        data: serde_json::to_value(SignatureData {
+            signature: base64::encode(signature),
+            public_key: bs58::encode(keypair.pubkey().to_bytes()).into_string(),
+            message: message,
+        })
+        .unwrap(),
     };
     (StatusCode::OK, Json(response))
 }
@@ -203,11 +206,12 @@ async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Re
     let is_valid_signature = signature.verify(&public_key.to_bytes(), payload.message.as_bytes());
     let response = Response::Success {
         success: true,
-        data: serde_json::json!({
-            "valid": is_valid_signature,
-            "message": payload.message,
-            "pubkey": bs58::encode(public_key.to_bytes()).into_string(),
-        }),
+        data: serde_json::to_value(VerificationData {
+            valid: is_valid_signature,
+            message: payload.message,
+            pubkey: bs58::encode(public_key.to_bytes()).into_string(),
+        })
+        .unwrap(),
     };
     (StatusCode::OK, Json(response))
 }
@@ -240,11 +244,16 @@ async fn send_sol(Json(payload): Json<SendSol>) -> (StatusCode, Json<Response>) 
     let ix = system_instruction::transfer(&from, &to, payload.lamports);
     let response = Response::Success {
         success: true,
-        data: serde_json::json!({
-            "program_id": bs58::encode(ix.program_id.to_bytes()).into_string(),
-            "accounts": ix.accounts.iter().map(|meta| bs58::encode(meta.pubkey.to_bytes()).into_string()).collect::<Vec<_>>(),
-            "instruction_data": base64::encode(ix.data),
-        }),
+        data: serde_json::to_value(SolTransferData {
+            program_id: bs58::encode(ix.program_id.to_bytes()).into_string(),
+            accounts: ix
+                .accounts
+                .iter()
+                .map(|meta| bs58::encode(meta.pubkey.to_bytes()).into_string())
+                .collect::<Vec<_>>(),
+            instruction_data: base64::encode(ix.data),
+        })
+        .unwrap(),
     };
     (StatusCode::OK, Json(response))
 }
@@ -309,14 +318,19 @@ async fn send_token(Json(payload): Json<SendToken>) -> (StatusCode, Json<Respons
     };
     let response = Response::Success {
         success: true,
-        data: serde_json::json!({
-            "program_id": bs58::encode(ix.program_id.to_bytes()).into_string(),
-            "accounts": ix.accounts.iter().map(|meta| SendTokenResponse {
-                pubkey: bs58::encode(meta.pubkey.to_bytes()).into_string(),
-                isSigner: meta.is_signer,
-            }).collect::<Vec<_>>(),
-            "instruction_data": base64::encode(ix.data),
-        }),
+        data: serde_json::to_value(TokenTransferData {
+            program_id: bs58::encode(ix.program_id.to_bytes()).into_string(),
+            accounts: ix
+                .accounts
+                .iter()
+                .map(|meta| SendTokenResponse {
+                    pubkey: bs58::encode(meta.pubkey.to_bytes()).into_string(),
+                    isSigner: meta.is_signer,
+                })
+                .collect::<Vec<_>>(),
+            instruction_data: base64::encode(ix.data),
+        })
+        .unwrap(),
     };
     (StatusCode::OK, Json(response))
 }
@@ -358,11 +372,14 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             )
         }
     };
+
+    let dest_ata = get_associated_token_address(&destination, &mint);
+
     let ix = match spl_token::instruction::mint_to(
         &spl_token::id(),
         &mint,
         &mint_authority,
-        &destination,
+        &dest_ata,
         &[],
         payload.amount,
     ) {
@@ -377,17 +394,25 @@ async fn mint_token(Json(payload): Json<MintTokenRequest>) -> (StatusCode, Json<
             )
         }
     };
+
+    let accounts: Vec<AccountMetaInfo> = ix
+        .accounts
+        .iter()
+        .map(|meta| AccountMetaInfo {
+            pubkey: bs58::encode(meta.pubkey.to_bytes()).into_string(),
+            is_signer: meta.is_signer,
+            is_writable: meta.is_writable,
+        })
+        .collect();
+
     let response = Response::Success {
         success: true,
-        data: serde_json::json!({
-            "program_id": bs58::encode(ix.program_id.to_bytes()).into_string(),
-            "accounts": ix.accounts.iter().map(|meta| AccountMetaInfo {
-                pubkey: bs58::encode(meta.pubkey.to_bytes()).into_string(),
-                is_signer: false,
-                is_writable: true,
-            }).collect::<Vec<_>>(),
-            "instruction_data": base64::encode(ix.data),
-        }),
+        data: serde_json::to_value(InstructionData {
+            program_id: bs58::encode(ix.program_id.to_bytes()).into_string(),
+            accounts: accounts,
+            instruction_data: base64::encode(ix.data),
+        })
+        .unwrap(),
     };
     (StatusCode::OK, Json(response))
 }
@@ -458,4 +483,45 @@ struct AccountMetaInfo {
 struct SendTokenResponse {
     pubkey: String,
     isSigner: bool,
+}
+
+#[derive(Serialize)]
+struct InstructionData {
+    program_id: String,
+    accounts: Vec<AccountMetaInfo>,
+    instruction_data: String,
+}
+
+#[derive(Serialize)]
+struct TokenTransferData {
+    program_id: String,
+    accounts: Vec<SendTokenResponse>,
+    instruction_data: String,
+}
+
+#[derive(Serialize)]
+struct SolTransferData {
+    program_id: String,
+    accounts: Vec<String>,
+    instruction_data: String,
+}
+
+#[derive(Serialize)]
+struct KeypairData {
+    pubkey: String,
+    secret: String,
+}
+
+#[derive(Serialize)]
+struct SignatureData {
+    signature: String,
+    public_key: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct VerificationData {
+    valid: bool,
+    message: String,
+    pubkey: String,
 }
