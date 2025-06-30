@@ -1,14 +1,20 @@
 use std::str::FromStr;
 
 use axum::{
+    extract::FromRef,
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 
 use serde::{Deserialize, Serialize};
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
-use spl_token::{id as token_program_id, instruction::initialize_mint};
+use solana_sdk::{
+    program_pack::Pack,
+    pubkey::Pubkey,
+    signature::{Keypair, Signature},
+    signer::Signer,
+};
+use spl_token::{id as token_program_id, instruction::initialize_mint, state::Mint};
 
 #[tokio::main]
 async fn main() {
@@ -17,7 +23,10 @@ async fn main() {
     let app = Router::new()
         .route("/", get(root))
         .route("/keypair", post(create_keypair))
-        .route("/token/create", post(create_token));
+        .route("/token/create", post(create_token))
+        .route("/message/sign", post(sign_message))
+        .route("/message/verify", post(verify_message));
+
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
@@ -40,7 +49,7 @@ async fn create_keypair() -> (StatusCode, Json<Response>) {
     (StatusCode::OK, Json(response))
 }
 
-pub async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Response>) {
+async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Response>) {
     let mint_pubkey = Pubkey::from_str(&payload.mint)
         .map_err(|_| {
             (
@@ -102,6 +111,44 @@ pub async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<R
     (StatusCode::OK, Json(response))
 }
 
+async fn sign_message(Json(payload): Json<SignData>) -> (StatusCode, Json<Response>) {
+    let keypair = Keypair::from_bytes(&bs58::decode(payload.secret).into_vec().unwrap()).unwrap();
+
+    let message = payload.message;
+    let signature = keypair.sign_message(message.as_bytes());
+
+    let response = Response {
+        status: true,
+        data: serde_json::json!({
+            "signature": base64::encode(signature),
+            "public_key": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
+            "message": message,
+        }),
+    };
+    (StatusCode::OK, Json(response))
+}
+
+async fn verify_message(Json(payload): Json<VerifyData>) -> (StatusCode, Json<Response>) {
+    let signature_bytes = base64::decode(&payload.signature).unwrap();
+    let signature = Signature::try_from(signature_bytes.as_slice()).unwrap();
+    let message = payload.message;
+    let public_key = Pubkey::from_str(&payload.pubkey).unwrap();
+
+    let is_valid_signature = signature.verify(&public_key.to_bytes(), message.as_bytes());
+
+    let response = Response {
+        status: true,
+        data: serde_json::json!({
+            "valid": is_valid_signature,
+            "signature": base64::encode(signature),
+            "pubkey": bs58::encode(public_key.to_bytes()).into_string(),
+            "message": message,
+        }),
+    };
+
+    (StatusCode::OK, Json(response))
+}
+
 #[derive(Serialize, Debug)]
 struct Response {
     status: bool,
@@ -113,6 +160,19 @@ struct MintToken {
     mintAuthority: String,
     mint: String,
     decimals: u8,
+}
+
+#[derive(Deserialize)]
+struct SignData {
+    message: String,
+    secret: String,
+}
+
+#[derive(Deserialize)]
+struct VerifyData {
+    signature: String,
+    message: String,
+    pubkey: String,
 }
 
 #[derive(Serialize)]
