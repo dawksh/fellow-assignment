@@ -45,8 +45,8 @@ async fn create_keypair() -> (StatusCode, Json<Response>) {
     let response = Response {
         status: true,
         data: serde_json::json!({
-            "public_key": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
-            "private_key": bs58::encode(keypair.to_bytes()).into_string(),
+            "pubkey": bs58::encode(keypair.pubkey().to_bytes()).into_string(),
+            "secret": bs58::encode(keypair.to_bytes()).into_string(),
         }),
     };
     (StatusCode::OK, Json(response))
