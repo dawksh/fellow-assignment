@@ -1,10 +1,14 @@
+use std::str::FromStr;
+
 use axum::{
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
+
 use serde::{Deserialize, Serialize};
-use solana_sdk::{signature::Keypair, signer::Signer};
+use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
+use spl_token::{id as token_program_id, instruction::initialize_mint};
 
 #[tokio::main]
 async fn main() {
@@ -36,19 +40,69 @@ async fn create_keypair() -> (StatusCode, Json<Response>) {
     (StatusCode::OK, Json(response))
 }
 
-async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Response>) {
+pub async fn create_token(Json(payload): Json<MintToken>) -> (StatusCode, Json<Response>) {
+    let mint_pubkey = Pubkey::from_str(&payload.mint)
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(Response {
+                    status: false,
+                    data: serde_json::json!({
+                        "error": "Invalid mint address"
+                    }),
+                }),
+            )
+        })
+        .unwrap();
+    let mint_authority = Pubkey::from_str(&payload.mintAuthority)
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(Response {
+                    status: false,
+                    data: serde_json::json!({
+                        "error": "Invalid mint authority address"
+                    }),
+                }),
+            )
+        })
+        .unwrap();
+
+    let ix = initialize_mint(
+        &token_program_id(),
+        &mint_pubkey,
+        &mint_authority,
+        None,
+        payload.decimals,
+    )
+    .expect("should build InitializeMint");
+
+    let accounts: Vec<AccountMetaInfo> = ix
+        .accounts
+        .iter()
+        .map(|meta| AccountMetaInfo {
+            pubkey: bs58::encode(meta.pubkey.to_bytes()).into_string(),
+            is_signer: meta.is_signer,
+            is_writable: meta.is_writable,
+            owner: bs58::encode(token_program_id().to_bytes()).into_string(),
+        })
+        .collect::<Vec<_>>();
+
+    let instruction_data = base64::encode(ix.data);
+
     let response = Response {
         status: true,
         data: serde_json::json!({
-            "mintAuthority": payload.mintAuthority,
-            "mint": payload.mint,
-            "decimals": payload.decimals,
+            "program_id": ix.program_id.to_string(),
+            "accounts": accounts,
+            "instruction_data": instruction_data,
         }),
     };
+
     (StatusCode::OK, Json(response))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct Response {
     status: bool,
     data: serde_json::Value,
@@ -59,4 +113,12 @@ struct MintToken {
     mintAuthority: String,
     mint: String,
     decimals: u8,
+}
+
+#[derive(Serialize)]
+struct AccountMetaInfo {
+    pubkey: String,
+    is_signer: bool,
+    is_writable: bool,
+    owner: String,
 }

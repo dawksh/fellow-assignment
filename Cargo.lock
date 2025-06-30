@@ -727,9 +727,11 @@ name = "fellow-assignment"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "bs58",
  "serde",
  "serde_json",
+ "solana-program",
  "solana-sdk",
  "spl-token",
  "tokio",
